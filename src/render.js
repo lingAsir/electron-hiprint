@@ -6,7 +6,7 @@ const path = require("path");
 const { Jimp } = require("jimp");
 const dayjs = require("dayjs");
 
-const { store } = require("../tools/utils");
+const { store, getCurrentPrintStatusByName } = require("../tools/utils");
 const db = require("../tools/database");
 
 // 这是 1920 * 1080 屏幕常规工作区域尺寸
@@ -331,14 +331,18 @@ async function printFun(event, data) {
     }
     // 判断打印机是否存在
     if (element.name === defaultPrinter) {
-      // todo: 打印机状态对照表
+      // 打印机状态检查, 打印机状态对照表
       // win32: https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-2
       // cups: https://www.cups.org/doc/cupspm.html#ipp_status_e
       if (process.platform === "win32") {
-        if (element.status != 0) {
+        // 512 忙(Busy）
+        // 1024 正在打印（Printing）
+        if (![0, 512, 1024].includes(element.status)) {
           printerError = true;
         }
       } else {
+        // Unix/Linux 系统，只有明确的错误状态才认为异常
+          // cups 状态：3=idle（空闲），5=stopped（停止），其他状态需要具体判断
         if (element.status != 3) {
           printerError = true;
         }
@@ -347,10 +351,11 @@ async function printFun(event, data) {
     }
   });
   if (printerError) {
+    const { StatusMsg } = getCurrentPrintStatusByName(defaultPrinter);
     console.log(
       `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
         data.templateId
-      }】 打印失败，打印机异常，打印机：${data.printer}`,
+      }】 打印失败，打印机异常，打印机：${data.printer}，打印机状态：${StatusMsg}`,
     );
     socket &&
       socket.emit("render-print-error", {
